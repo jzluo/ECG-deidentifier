@@ -23,9 +23,31 @@ def resource_path(relative_path):
     -------
     str
         Absolute path of the resource.
+
     """
     base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
     return os.path.join(base_path, relative_path)
+
+
+def PDFtoSVG(phi_ecg, out_dir):
+    """Calls mutool to convert a PDF to an SVG
+
+    Parameters
+    ----------
+    phi_ecg: str
+        Path to PDF input file
+    out_dir: str
+
+    Returns
+    -------
+    phi_svg: str
+        Path of generated SVG
+
+    """
+    phi_svg = os.path.join(out_dir, '{}.svg'.format(os.path.basename(phi_ecg).split('.')[0]))
+    mutool = [resource_path('mutool.exe'), 'convert', '-F', 'svg', '-O', 'text=text', '-o', phi_svg, phi_ecg]
+    run(args=mutool, shell=True, check=True, stderr=DEVNULL)
+    return phi_svg
 
 
 def deidentify(phi_ecg, ecg_key, id_key, out_dir):
@@ -43,11 +65,9 @@ def deidentify(phi_ecg, ecg_key, id_key, out_dir):
         Output directory path
 
     """
-    phi_svg = os.path.join(out_dir, '{}.svg'.format(os.path.basename(phi_ecg).split('.')[0]))
-    mutool = [resource_path('mutool.exe'), 'convert', '-F', 'svg', '-O', 'text=text', '-o', phi_svg, phi_ecg]
-
     try:
-        run(args=mutool, shell=True, check=True, stderr=DEVNULL)
+        phi_svg = PDFtoSVG(phi_ecg, out_dir)
+
     except CalledProcessError as e:
         with open('error_log.txt', 'a') as log:
             log.write('{}  Error converting {}: {}\n'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
@@ -71,92 +91,105 @@ def deidentify(phi_ecg, ecg_key, id_key, out_dir):
         i += 1
 
     # mrn = text_elements[16].text.split(':')[1]
-    mrn = os.path.basename(phi_ecg).split('_')[0]
+    mrn = os.path.basename(phi_ecg).split('_')[0]  # need to check with Dustin which ID is correct
     ecg_date = parser.parse(text_elements[17].text)
 
-    if id_key.get(mrn) is not None:
-        if ecg_key.get(mrn).get(ecg_date) is not None:
-            strf_ecg = '%d-%b-%Y %H:%M:%S'
-            strf_ecg_alt = '%d-%b-%Y %H:%M'
+    try:
+        pt_id = list(id_key[mrn])[0]
 
-            pt_id = list(id_key.get(mrn))[0]
+    except IndexError:
+        with open('error_log.txt', 'a') as log:
+            log.write(
+                '{}   MRN {} not present in ID key\n'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), mrn))
+        return
 
-            text_elements[15].text = pt_id  # replace name with PT_ID
-            text_elements[15].attrib['x'] = text_elements[15].attrib['x'].split()[0]
+    try:
+        deid_ecg_date = ecg_key[mrn][ecg_date]
 
-            text_elements[17].text = ecg_key.get(mrn).get(ecg_date).strftime(strf_ecg)  # de-id ecg_date
-            text_elements[17].attrib['x'] = text_elements[17].attrib['x'].split()[0]
+    except KeyError:
+        with open('error_log.txt', 'a') as log:
+            log.write('{}   MRN {}: ECG date {} is not present in ECG key\n'.format(
+                dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                mrn,
+                str(ecg_date))
+            )
+        return
 
-            text_elements[-9 - i].text = '{} ({} yr)'.format(dt.datetime.strftime(id_key.get(mrn).get(pt_id), '%d-%b-%Y'),
-                                                             relativedelta.relativedelta(ecg_key.get(mrn).get(ecg_date),
-                                                                                         id_key.get(mrn).get(
-                                                                                             pt_id)).years)
+    strf_ecg = '%d-%b-%Y %H:%M:%S'
+    strf_ecg_alt = '%d-%b-%Y %H:%M'
 
-            text_elements[-1].clear()  # remove EID EDT ORDER ACCOUNT field
-            # text_elements[-4].clear()     # remove Technician field
-            text_elements[-4].text = 'Technician:'
-            text_elements[16].clear()  # remove ID field
-            # text_elements[-26-i].clear()  # remove Confirmed by: field
-            text_elements[-26 - i].text = 'Confirmed by:'
-            # text_elements[-27-i].clear()  # remove Referred by: field
-            text_elements[-27 - i].text = 'Referred by:'
-            text_elements[-28 - i].clear()  # remove CID field
+    text_elements[15].text = pt_id  # replace name with PT_ID
+    text_elements[15].attrib['x'] = text_elements[15].attrib['x'].split()[0]  # remove old per-glyph x-coords
 
-            for finding in range(19, text_elements.index(text_elements[-34 - i])):
-                try:
-                    parse = parser.parse(text_elements[finding].text, fuzzy_with_tokens=True, ignoretz=True)
-                    if ecg_key.get(mrn).get(parse[0]) is not None:
-                        deid_date = ecg_key.get(mrn).get(parse[0])
+    text_elements[17].text = deid_ecg_date.strftime(strf_ecg)  # replace ECG date
+    text_elements[17].attrib['x'] = text_elements[17].attrib['x'].split()[0]
 
-                    elif ecg_key.get(mrn).get(parse[0]) is None:
-                        nearest_ecg = min(list(ecg_key.get(mrn).keys()), key=lambda x: abs(x - parse[0]))
-                        if (parse[0] - nearest_ecg) < dt.timedelta(minutes=1) or (nearest_ecg - parse[0]) < dt.timedelta(
-                                minutes=1):
-                            deid_date = ecg_key.get(mrn).get(nearest_ecg)
-                        else:
-                            with open('error_log.txt', 'a') as log:
-                                log.write('{}   Non-ECG Date: "{}"'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                                                                           text_elements[finding].text, ))
-                                return
+    text_elements[-9-i].text = '{} ({} yr)'.format(
+        dt.datetime.strftime(id_key.get(mrn).get(pt_id), '%d-%b-%Y'),
+        relativedelta.relativedelta(ecg_key.get(mrn).get(ecg_date), id_key.get(mrn).get(pt_id)).years
+    )
 
-                    if text_elements[finding].text.count('-') == 2 and text_elements[finding].text.count(':') == 2:
-                        deid_date = dt.datetime.strftime(deid_date, strf_ecg)
-                        phi_date = dt.datetime.strftime(parse[0], strf_ecg)
+    text_elements[-1].clear()  # remove EID EDT ORDER ACCOUNT field
+    # text_elements[-4].clear()     # remove Technician field
+    text_elements[-4].text = 'Technician:'
+    text_elements[16].clear()  # remove ID field
+    # text_elements[-26-i].clear()  # remove Confirmed by: field
+    text_elements[-26-i].text = 'Confirmed by:'
+    # text_elements[-27-i].clear()  # remove Referred by: field
+    text_elements[-27-i].text = 'Referred by:'
+    text_elements[-28-i].clear()  # remove CID field
 
-                    elif text_elements[finding].text.count('-') == 2 and text_elements[finding].text.count(':') == 1:
-                        deid_date = dt.datetime.strftime(deid_date, strf_ecg_alt)
-                        phi_date = dt.datetime.strftime(parse[0], strf_ecg_alt)
+    for finding in range(19, text_elements.index(text_elements[-34-i])):
+        try:
+            parse = parser.parse(text_elements[finding].text, fuzzy_with_tokens=True, ignoretz=True)
+        except ValueError:
+            continue
 
-                    else:
-                        with open('error_log.txt', 'a') as log:
-                            log.write(
-                                '{}   Unknown format in finding: "{}"'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                                                                              text_elements[finding].text))
-                            return
+        if ecg_key.get(mrn).get(parse[0]) is not None:
+            deid_date = ecg_key.get(mrn).get(parse[0])
 
-                    idx = text_elements[finding].text.lower().find(phi_date.lower())
+        else:  # TO-DO: get list of non-ECG date mentions from Dustin
+            nearest_ecg = min(list(ecg_key.get(mrn).keys()), key=lambda x: abs(x - parse[0]))
 
-                    text_elements[finding].text = ''.join([text_elements[finding].text[:idx],
-                                                           deid_date,
-                                                           text_elements[finding].text[(idx + len(deid_date)):]])
+            if (parse[0] - nearest_ecg) < dt.timedelta(minutes=1) or (nearest_ecg - parse[0]) < dt.timedelta(
+                    minutes=1):  # in case the seconds field is missing or something
+                deid_date = ecg_key.get(mrn).get(nearest_ecg)
+            else:
+                with open('error_log.txt', 'a') as log:
+                    log.write('{}   Non-ECG Finding Date: "{}"'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                                                       text_elements[finding].text))
+                    return
 
-                except ValueError:
-                    continue
-            tree.write('{}/{}_{}_EKG.svg'.format(out_dir,
-                                                 list(id_key.get(mrn))[0],
-                                                 dt.datetime.strftime(ecg_key.get(mrn).get(ecg_date), '%Y-%m-%d')))
+        # super crude way of checking datetime format for now
+        if text_elements[finding].text.count('-') == 2 and text_elements[finding].text.count(':') == 2:
+            deid_date = dt.datetime.strftime(deid_date, strf_ecg)
+            phi_date = dt.datetime.strftime(parse[0], strf_ecg)
+
+        elif text_elements[finding].text.count('-') == 2 and text_elements[finding].text.count(':') == 1:
+            deid_date = dt.datetime.strftime(deid_date, strf_ecg_alt)
+            phi_date = dt.datetime.strftime(parse[0], strf_ecg_alt)
 
         else:
             with open('error_log.txt', 'a') as log:
-                log.write('{}   MRN {}: ECG date {} is not present in ECG key\n'.format(
-                    dt.now().strftime('%Y-%m-%d %H:%M:%S'),
-                    mrn,
-                    str(ecg_date)))
+                log.write(
+                    '{}   Unknown date format in finding: "{}"'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                                                       text_elements[finding].text)
+                )
+                return
 
-    else:
-        with open('error_log.txt', 'a') as log:
-            log.write('{}   MRN {} not present in ID key\n'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), mrn))
-            return
+        idx = text_elements[finding].text.lower().find(phi_date.lower())
+
+        text_elements[finding].text = ''.join([text_elements[finding].text[:idx],
+                                               deid_date,
+                                               text_elements[finding].text[(idx + len(deid_date)):]
+                                               ]
+                                              )
+
+    tree.write('{}/{}_{}_EKG.svg'.format(out_dir,
+                                         list(id_key.get(mrn))[0],
+                                         dt.datetime.strftime(ecg_key.get(mrn).get(ecg_date), '%Y-%m-%d')
+                                         )
+               )
 
     if os.path.exists('{}1.svg'.format(phi_svg.split('.')[0])):
         os.remove('{}1.svg'.format(phi_svg.split('.')[0]))
