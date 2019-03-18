@@ -31,7 +31,7 @@ def resource_path(relative_path):
 
 def PDFtoSVG(phi_ecg, out_dir):
     """Calls mutool to convert a PDF to an SVG
-    
+
     Parameters
     ----------
     phi_ecg: str
@@ -156,8 +156,8 @@ def deidentify(phi_ecg, ecg_key, id_key, out_dir):
                 deid_date = ecg_key.get(mrn).get(nearest_ecg)
             else:
                 with open('error_log.txt', 'a') as log:
-                    log.write('{}   Non-ECG Date: "{}"'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                                                               text_elements[finding].text))
+                    log.write('{}   Non-ECG Finding Date: "{}"'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                                                       text_elements[finding].text))
                     return
 
         # super crude way of checking datetime format for now
@@ -172,8 +172,8 @@ def deidentify(phi_ecg, ecg_key, id_key, out_dir):
         else:
             with open('error_log.txt', 'a') as log:
                 log.write(
-                    '{}   Unknown format in finding: "{}"'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                                                                  text_elements[finding].text)
+                    '{}   Unknown date format in finding: "{}"'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                                                       text_elements[finding].text)
                 )
                 return
 
