@@ -90,8 +90,8 @@ def deidentify(phi_ecg, ecg_key, id_key, out_dir):
     if 'lb' in text_elements[-8].text or 'in' in text_elements[-8].text:
         i += 1
 
-    # mrn = text_elements[16].text.split(':')[1]
-    mrn = os.path.basename(phi_ecg).split('_')[0]  # need to check with Dustin which ID is correct
+    mrn = text_elements[16].text.split(':')[1].lstrip('0')
+    # mrn = os.path.basename(phi_ecg).split('_')[0]
     ecg_date = parser.parse(text_elements[17].text)
 
     try:
