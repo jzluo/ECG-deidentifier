@@ -141,33 +141,35 @@ def deidentify(phi_ecg, ecg_key, id_key, out_dir):
 
     for finding in range(19, text_elements.index(text_elements[-34-i])):
         try:
-            parse = parser.parse(text_elements[finding].text, fuzzy_with_tokens=True, ignoretz=True)
+            finding_dt = parser.parse(text_elements[finding].text, fuzzy_with_tokens=True, ignoretz=True)
         except ValueError:
             continue
 
-        if ecg_key.get(mrn).get(parse[0]) is not None:
-            deid_date = ecg_key.get(mrn).get(parse[0])
+        deid_findingdt = finding_dt - (ecg_date - deid_ecg_date)
 
-        else:  # TO-DO: get list of non-ECG date mentions from Dustin
-            nearest_ecg = min(list(ecg_key.get(mrn).keys()), key=lambda x: abs(x - parse[0]))
+        # if ecg_key.get(mrn).get(parse[0]) is not None:
+        #     deid_date = ecg_key.get(mrn).get(parse[0])
 
-            if (parse[0] - nearest_ecg) < dt.timedelta(minutes=1) or (nearest_ecg - parse[0]) < dt.timedelta(
-                    minutes=1):  # in case the seconds field is missing or something
-                deid_date = ecg_key.get(mrn).get(nearest_ecg)
-            else:
-                with open('error_log.txt', 'a') as log:
-                    log.write('{}   Non-ECG Finding Date: "{}"'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                                                                       text_elements[finding].text))
-                    return
+        # else:  # TO-DO: get list of non-ECG date mentions from Dustin
+        #     nearest_ecg = min(list(ecg_key.get(mrn).keys()), key=lambda x: abs(x - parse[0]))
+        #
+        #     if (parse[0] - nearest_ecg) < dt.timedelta(minutes=1) or (nearest_ecg - parse[0]) < dt.timedelta(
+        #             minutes=1):  # in case the seconds field is missing or something
+        #         deid_date = ecg_key.get(mrn).get(nearest_ecg)
+        #     else:
+        #         with open('error_log.txt', 'a') as log:
+        #             log.write('{}   Non-ECG Finding Date: "{}"'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        #                                                                text_elements[finding].text))
+        #             return
 
         # super crude way of checking datetime format for now
         if text_elements[finding].text.count('-') == 2 and text_elements[finding].text.count(':') == 2:
-            deid_date = dt.datetime.strftime(deid_date, strf_ecg)
-            phi_date = dt.datetime.strftime(parse[0], strf_ecg)
+            deid_findingdt = dt.datetime.strftime(deid_findingdt, strf_ecg)
+            phi_date = dt.datetime.strftime(finding_dt[0], strf_ecg)
 
         elif text_elements[finding].text.count('-') == 2 and text_elements[finding].text.count(':') == 1:
-            deid_date = dt.datetime.strftime(deid_date, strf_ecg_alt)
-            phi_date = dt.datetime.strftime(parse[0], strf_ecg_alt)
+            deid_findingdt = dt.datetime.strftime(deid_findingdt, strf_ecg_alt)
+            phi_date = dt.datetime.strftime(finding_dt[0], strf_ecg_alt)
 
         else:
             with open('error_log.txt', 'a') as log:
@@ -180,8 +182,8 @@ def deidentify(phi_ecg, ecg_key, id_key, out_dir):
         idx = text_elements[finding].text.lower().find(phi_date.lower())
 
         text_elements[finding].text = ''.join([text_elements[finding].text[:idx],
-                                               deid_date,
-                                               text_elements[finding].text[(idx + len(deid_date)):]
+                                               deid_findingdt,
+                                               text_elements[finding].text[(idx + len(deid_findingdt)):]
                                                ]
                                               )
 
