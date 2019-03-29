@@ -226,8 +226,12 @@ def main(id_key_path, ecg_key_path, in_dir, out_dir):
     if not os.path.exists(out_dir):
         os.mkdir(out_dir)
 
-    for phi_ecg in tqdm([os.path.join(in_dir, x) for x in os.listdir(in_dir)]):
-        deidentify(phi_ecg, ecg_key, id_key, out_dir)
+    for (dir, subdir, files) in os.walk(in_dir):
+        for phi_ecg in files:
+            deidentify(phi_ecg, ecg_key, id_key, out_dir)
+
+    # for phi_ecg in tqdm([os.path.join(in_dir, x) for x in os.listdir(in_dir)]):
+    #     deidentify(phi_ecg, ecg_key, id_key, out_dir)
 
 
 if __name__ == '__main__':
