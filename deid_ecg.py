@@ -145,7 +145,7 @@ def deidentify(phi_ecg, ecg_key, id_key, out_dir):
         except ValueError:
             continue
 
-        deid_findingdt = finding_dt - (ecg_date - deid_ecg_date)
+        deid_findingdt = finding_dt[0] - (ecg_date - deid_ecg_date)
 
         # if ecg_key.get(mrn).get(parse[0]) is not None:
         #     deid_date = ecg_key.get(mrn).get(parse[0])
@@ -171,6 +171,10 @@ def deidentify(phi_ecg, ecg_key, id_key, out_dir):
             deid_findingdt = dt.datetime.strftime(deid_findingdt, strf_ecg_alt)
             phi_date = dt.datetime.strftime(finding_dt[0], strf_ecg_alt)
 
+        elif text_elements[finding].text.count('-') == 2 and text_elements[finding].text.count(':') == 0:
+            deid_findingdt = dt.datetime.strftime(deid_findingdt, '%d-%b-%Y')
+            phi_date = dt.datetime.strftime(finding_dt[0], '%d-%b-%Y')
+            
         else:
             with open('error_log.txt', 'a') as log:
                 log.write(
@@ -226,8 +230,9 @@ def main(id_key_path, ecg_key_path, in_dir, out_dir):
     if not os.path.exists(out_dir):
         os.mkdir(out_dir)
 
-    for (dir, subdir, files) in os.walk(in_dir):
-        for phi_ecg in files:
+    for (dir, subdir, files) in tqdm(os.walk(in_dir)):
+        for ecg in files:
+            phi_ecg = os.path.join(dir, ecg)
             deidentify(phi_ecg, ecg_key, id_key, out_dir)
 
     # for phi_ecg in tqdm([os.path.join(in_dir, x) for x in os.listdir(in_dir)]):
