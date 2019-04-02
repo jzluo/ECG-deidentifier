@@ -98,8 +98,8 @@ def deidentify(mrn, phi_ecg, ecg_key, id_key, out_dir):
     except ValueError:
         with open('error_log.txt', 'a') as log:
             log.write(
-                '{}   MRN {}: weird format: {}\n'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                                                         mrn,
+                '{}   ECG {}: weird format: {}\n'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                                         phi_ecg,
                                                          text_elements[17].text))
         return
 
