@@ -50,7 +50,7 @@ def PDFtoSVG(phi_ecg, out_dir):
     return phi_svg
 
 
-def deidentify(phi_ecg, ecg_key, id_key, out_dir):
+def deidentify(mrn, phi_ecg, ecg_key, id_key, out_dir):
     """Converts a PDF of an ECG with PHI to a de-identified SVG
 
     Parameters
@@ -90,7 +90,7 @@ def deidentify(phi_ecg, ecg_key, id_key, out_dir):
     if 'lb' in text_elements[-8].text or 'in' in text_elements[-8].text:
         i += 1
 
-    mrn = text_elements[16].text.split(':')[1].lstrip('0')
+    # mrn = text_elements[16].text.split(':')[1].lstrip('0')
     # mrn = os.path.basename(phi_ecg).split('_')[0]
     ecg_date = parser.parse(text_elements[17].text)
 
@@ -233,7 +233,8 @@ def main(id_key_path, ecg_key_path, in_dir, out_dir):
     for (dir, subdir, files) in tqdm(os.walk(in_dir)):
         for ecg in files:
             phi_ecg = os.path.join(dir, ecg)
-            deidentify(phi_ecg, ecg_key, id_key, out_dir)
+            mrn = dir.split('\\')[-1]  # get MRN from folder name instead of the tracing
+            deidentify(mrn, phi_ecg, ecg_key, id_key, out_dir)
 
     # for phi_ecg in tqdm([os.path.join(in_dir, x) for x in os.listdir(in_dir)]):
     #     deidentify(phi_ecg, ecg_key, id_key, out_dir)
