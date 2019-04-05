@@ -98,7 +98,7 @@ def deidentify(mrn, phi_ecg, ecg_key, id_key, out_dir):
     except ValueError:
         with open('error_log.txt', 'a') as log:
             log.write(
-                '{}   ECG {}: weird format: {}\n'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                '{}   ECG {}: wrong field for IMG_DT: {}\n'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                                                          phi_ecg,
                                                          text_elements[17].text))
         return
@@ -187,8 +187,9 @@ def deidentify(mrn, phi_ecg, ecg_key, id_key, out_dir):
         else:
             with open('error_log.txt', 'a') as log:
                 log.write(
-                    '{}   Unknown date format in finding: "{}"'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                                                                       text_elements[finding].text)
+                    '{}  {} Unknown DT in finding: {}\n'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                                                                         phi_ecg,
+                                                                         text_elements[finding].text)
                 )
                 return
 
