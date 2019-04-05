@@ -2,6 +2,7 @@ import argparse
 import csv
 import datetime as dt
 import os
+import re
 import sys
 import xml.etree.ElementTree as et
 
@@ -72,7 +73,8 @@ def deidentify(mrn, phi_ecg, ecg_key, id_key, out_dir):
         with open('error_log.txt', 'a') as log:
             log.write('{}  Error converting {}: {}\n'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                                                              os.path.basename(phi_ecg),
-                                                             e.output))
+                                                             e.output)
+            )
         return
 
     ns = {'svg': 'http://www.w3.org/2000/svg'}
@@ -93,14 +95,40 @@ def deidentify(mrn, phi_ecg, ecg_key, id_key, out_dir):
     # mrn = text_elements[16].text.split(':')[1].lstrip('0')
     # mrn = os.path.basename(phi_ecg).split('_')[0]
 
+    ele_idx = {'mrn': 'ID:',
+               'ghs': 'Geisinger Health System',
+               '25mm/s': '25mm/s',
+               'refby': 'Referred by:',
+               'confby': 'Confirmed By:',
+               'prtaxes': 'P-R-T axes',
+               'technician': 'Technician:'
+    }
+    match_terms = [term for term in ele_idx]
+    texts = [x.text for x in text_elements]
+
+    for i, text in enumerate(texts):
+        for term in match_terms:
+            if re.match(ele_idx[term], text):
+                ele_idx[term] = i
+                match_terms.remove(term)
+                break
+
+    ele_idx['name'] = ele_idx['mrn'] - 1
+    ele_idx['ecg_date'] = ele_idx['mrn'] + 1
+    ele_idx['finding_start'] = ele_idx['ghs'] + 1
+    ele_idx['finding_end'] = ele_idx['25mm/s']
+    ele_idx['bday'] = ele_idx['prtaxes'] + 1
+
     try:
-        ecg_date = parser.parse(text_elements[17].text)
+        ecg_date = parser.parse(text_elements[ele_idx['ecg_date']].text)
+
     except ValueError:
         with open('error_log.txt', 'a') as log:
             log.write(
                 '{}   ECG {}: wrong field for IMG_DT: {}\n'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                                                         phi_ecg,
-                                                         text_elements[17].text))
+                                                                   phi_ecg,
+                                                                   text_elements[ele_idx['ecg_date']].text)
+            )
         return
 
     try:
@@ -109,7 +137,8 @@ def deidentify(mrn, phi_ecg, ecg_key, id_key, out_dir):
     except IndexError:
         with open('error_log.txt', 'a') as log:
             log.write(
-                '{}   MRN {} not present in ID key\n'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), mrn))
+                '{}   MRN {} not present in ID key\n'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), mrn)
+            )
         return
 
     try:
@@ -127,49 +156,30 @@ def deidentify(mrn, phi_ecg, ecg_key, id_key, out_dir):
     strf_ecg = '%d-%b-%Y %H:%M:%S'
     strf_ecg_alt = '%d-%b-%Y %H:%M'
 
-    text_elements[15].text = pt_id  # replace name with PT_ID
-    text_elements[15].attrib['x'] = text_elements[15].attrib['x'].split()[0]  # remove old per-glyph x-coords
+    text_elements[ele_idx['name']].text = pt_id  # replace name with PT_ID
+    text_elements[ele_idx['name']].attrib['x'] = text_elements[ele_idx['name']].attrib['x'].split()[0]  # remove old per-glyph x-coords
 
-    text_elements[17].text = deid_ecg_date.strftime(strf_ecg)  # replace ECG date
-    text_elements[17].attrib['x'] = text_elements[17].attrib['x'].split()[0]
+    text_elements[ele_idx['ecg_date']].text = deid_ecg_date.strftime(strf_ecg)  # replace ECG date
+    text_elements[ele_idx['ecg_date']].attrib['x'] = text_elements[ele_idx['ecg_date']].attrib['x'].split()[0]
 
-    text_elements[-9-i].text = '{} ({} yr)'.format(
+    text_elements[ele_idx['bday']].text = '{} ({} yr)'.format(
         dt.datetime.strftime(id_key.get(mrn).get(pt_id), '%d-%b-%Y'),
         relativedelta.relativedelta(ecg_key.get(mrn).get(ecg_date), id_key.get(mrn).get(pt_id)).years
     )
 
     text_elements[-1].clear()  # remove EID EDT ORDER ACCOUNT field
-    # text_elements[-4].clear()     # remove Technician field
-    text_elements[-4].text = 'Technician:'
-    text_elements[16].clear()  # remove ID field
-    # text_elements[-26-i].clear()  # remove Confirmed by: field
-    text_elements[-26-i].text = 'Confirmed by:'
-    # text_elements[-27-i].clear()  # remove Referred by: field
-    text_elements[-27-i].text = 'Referred by:'
-    text_elements[-28-i].clear()  # remove CID field
+    text_elements[ele_idx['mrn']].clear()  # remove ID field
+    text_elements[ele_idx['technician']].text = 'Technician:'
+    text_elements[ele_idx['confby']].text = 'Confirmed by:'
+    text_elements[ele_idx['refby']].text = 'Referred by:'
 
-    for finding in range(19, text_elements.index(text_elements[-34-i])):
+    for finding in range(ele_idx['finding_start'], ele_idx['finding_end']):
         try:
             finding_dt = parser.parse(text_elements[finding].text, fuzzy_with_tokens=True, ignoretz=True)
         except ValueError:
             continue
 
         deid_findingdt = finding_dt[0] - (ecg_date - deid_ecg_date)
-
-        # if ecg_key.get(mrn).get(parse[0]) is not None:
-        #     deid_date = ecg_key.get(mrn).get(parse[0])
-
-        # else:  # TO-DO: get list of non-ECG date mentions from Dustin
-        #     nearest_ecg = min(list(ecg_key.get(mrn).keys()), key=lambda x: abs(x - parse[0]))
-        #
-        #     if (parse[0] - nearest_ecg) < dt.timedelta(minutes=1) or (nearest_ecg - parse[0]) < dt.timedelta(
-        #             minutes=1):  # in case the seconds field is missing or something
-        #         deid_date = ecg_key.get(mrn).get(nearest_ecg)
-        #     else:
-        #         with open('error_log.txt', 'a') as log:
-        #             log.write('{}   Non-ECG Finding Date: "{}"'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        #                                                                text_elements[finding].text))
-        #             return
 
         # super crude way of checking datetime format for now
         if text_elements[finding].text.count('-') == 2 and text_elements[finding].text.count(':') == 2:
@@ -193,12 +203,11 @@ def deidentify(mrn, phi_ecg, ecg_key, id_key, out_dir):
                 )
                 return
 
-        idx = text_elements[finding].text.lower().find(phi_date.lower())
+        idx = text_elements[finding].text.lower().find(phi_date.lower())  # get index pos of date in finding str
 
         text_elements[finding].text = ''.join([text_elements[finding].text[:idx],
                                                deid_findingdt,
-                                               text_elements[finding].text[(idx + len(deid_findingdt)):]
-                                               ]
+                                               text_elements[finding].text[(idx + len(deid_findingdt)):]]
                                               )
 
     tree.write('{}/{}_{}_EKG.svg'.format(out_dir,
@@ -212,7 +221,8 @@ def deidentify(mrn, phi_ecg, ecg_key, id_key, out_dir):
     else:
         with open('error_log.txt', 'a') as log:
             log.write("{}   Can't delete {}; file doesn't exist\n".format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                                                                          phi_svg))
+                                                                          phi_svg)
+            )
 
 
 def main(id_key_path, ecg_key_path, in_dir, out_dir):
