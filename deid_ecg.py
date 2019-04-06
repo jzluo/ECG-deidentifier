@@ -169,9 +169,33 @@ def deidentify(mrn, phi_ecg, ecg_key, id_key, out_dir):
 
     text_elements[-1].clear()  # remove EID EDT ORDER ACCOUNT field
     text_elements[ele_idx['mrn']].clear()  # remove ID field
-    text_elements[ele_idx['technician']].text = 'Technician:'
-    text_elements[ele_idx['confby']].text = 'Confirmed by:'
-    text_elements[ele_idx['refby']].text = 'Referred by:'
+
+    try:
+        text_elements[ele_idx['technician']].text = 'Technician:'
+    except TypeError:
+        with open('error_log.txt', 'a') as log:
+            log.write('{}   Please verify that {} has no "Technician:" field\n'.format(
+                dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                phi_ecg)
+            )
+
+    try:
+        text_elements[ele_idx['confby']].text = 'Confirmed by:'
+    except TypeError:
+        with open('error_log.txt', 'a') as log:
+            log.write('{}   Please verify that {} has no "Confirmed by:" field\n'.format(
+                dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                phi_ecg)
+            )
+
+    try:
+        text_elements[ele_idx['refby']].text = 'Referred by:'
+    except TypeError:
+        with open('error_log.txt', 'a') as log:
+            log.write('{}   Please verify that {} has no "Referred by:" field\n'.format(
+                dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                phi_ecg)
+            )
 
     for finding in range(ele_idx['finding_start'], ele_idx['finding_end']):
         try:
