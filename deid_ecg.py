@@ -84,14 +84,6 @@ def deidentify(mrn, phi_ecg, ecg_key, id_key, out_dir):
 
     text_elements = root.findall('.//svg:tspan', ns)
 
-    #  ECGs are inconsistent in whether or not they include height/weight, which are found in [-7] and [-8]
-    #  i handles the offset in these cases
-    i = 0
-    if 'lb' in text_elements[-7].text or 'in' in text_elements[-7].text:
-        i += 1
-    if 'lb' in text_elements[-8].text or 'in' in text_elements[-8].text:
-        i += 1
-
     # mrn = text_elements[16].text.split(':')[1].lstrip('0')
     # mrn = os.path.basename(phi_ecg).split('_')[0]
 
@@ -163,7 +155,7 @@ def deidentify(mrn, phi_ecg, ecg_key, id_key, out_dir):
     text_elements[ele_idx['ecg_date']].attrib['x'] = text_elements[ele_idx['ecg_date']].attrib['x'].split()[0]
 
     text_elements[ele_idx['bday']].text = '{} ({} yr)'.format(
-        dt.datetime.strftime(id_key.get(mrn).get(pt_id), '%d-%b-%Y'),
+        dt.datetime.strftime(id_key.get(mrn).get(pt_id), '%d-%b-%Y').upper(),
         relativedelta.relativedelta(ecg_key.get(mrn).get(ecg_date), id_key.get(mrn).get(pt_id)).years
     )
 
@@ -180,7 +172,7 @@ def deidentify(mrn, phi_ecg, ecg_key, id_key, out_dir):
             )
 
     try:
-        text_elements[ele_idx['confby']].text = 'Confirmed by:'
+        text_elements[ele_idx['confby']].text = 'Confirmed By:'
     except TypeError:
         with open('error_log.txt', 'a') as log:
             log.write('{}   Please verify that {} has no "Confirmed by:" field\n'.format(
@@ -207,15 +199,15 @@ def deidentify(mrn, phi_ecg, ecg_key, id_key, out_dir):
 
         # super crude way of checking datetime format for now
         if text_elements[finding].text.count('-') == 2 and text_elements[finding].text.count(':') == 2:
-            deid_findingdt = dt.datetime.strftime(deid_findingdt, strf_ecg)
+            deid_findingdt = dt.datetime.strftime(deid_findingdt, strf_ecg).upper()
             phi_date = dt.datetime.strftime(finding_dt[0], strf_ecg)
 
         elif text_elements[finding].text.count('-') == 2 and text_elements[finding].text.count(':') == 1:
-            deid_findingdt = dt.datetime.strftime(deid_findingdt, strf_ecg_alt)
+            deid_findingdt = dt.datetime.strftime(deid_findingdt, strf_ecg_alt).upper()
             phi_date = dt.datetime.strftime(finding_dt[0], strf_ecg_alt)
 
         elif text_elements[finding].text.count('-') == 2 and text_elements[finding].text.count(':') == 0:
-            deid_findingdt = dt.datetime.strftime(deid_findingdt, '%d-%b-%Y')
+            deid_findingdt = dt.datetime.strftime(deid_findingdt, '%d-%b-%Y').upper()
             phi_date = dt.datetime.strftime(finding_dt[0], '%d-%b-%Y')
             
         else:
