@@ -1,6 +1,5 @@
 import argparse
 import csv
-import datetime as dt
 import os
 import re
 import sys
@@ -8,6 +7,7 @@ import xml.etree.ElementTree as et
 
 from collections import defaultdict
 from dateutil import parser, relativedelta
+from datetime import datetime as dt
 from subprocess import run, CalledProcessError, DEVNULL
 from tqdm import tqdm
 
@@ -51,7 +51,7 @@ def PDFtoSVG(phi_ecg, out_dir):
     return phi_svg
 
 
-def deidentify(mrn, phi_ecg, ecg_key, id_key, out_dir):
+def deidentify(mrn, phi_ecg, id_key, out_dir):
     """Converts a PDF of an ECG with PHI to a de-identified SVG
 
     Parameters
@@ -67,11 +67,21 @@ def deidentify(mrn, phi_ecg, ecg_key, id_key, out_dir):
 
     """
     try:
+        pt_id = list(id_key[mrn])[0]
+
+    except IndexError:
+        with open('error_log.txt', 'a') as log:
+            log.write(
+                '{}   MRN {} not present in ID key\n'.format(dt.now().strftime('%Y-%m-%d %H:%M:%S'), mrn)
+            )
+        return
+
+    try:
         phi_svg = PDFtoSVG(phi_ecg, out_dir)
 
     except CalledProcessError as e:
         with open('error_log.txt', 'a') as log:
-            log.write('{}  Error converting {}: {}\n'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            log.write('{}  Error converting {}: {}\n'.format(dt.now().strftime('%Y-%m-%d %H:%M:%S'),
                                                              os.path.basename(phi_ecg),
                                                              e.output)
             )
@@ -111,35 +121,27 @@ def deidentify(mrn, phi_ecg, ecg_key, id_key, out_dir):
     ele_idx['finding_end'] = ele_idx['25mm/s']
     ele_idx['bday'] = ele_idx['prtaxes'] + 1
 
+    date_shift = dt.strptime(text_elements[ele_idx['bday']].text.split()[0], '%d-%b-%Y') - id_key.get(mrn).get(pt_id)
+
     try:
         ecg_date = parser.parse(text_elements[ele_idx['ecg_date']].text)
 
     except ValueError:
         with open('error_log.txt', 'a') as log:
             log.write(
-                '{}   ECG {}: wrong field for IMG_DT: {}\n'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                '{}   ECG {}: wrong field for IMG_DT: {}\n'.format(dt.now().strftime('%Y-%m-%d %H:%M:%S'),
                                                                    phi_ecg,
                                                                    text_elements[ele_idx['ecg_date']].text)
             )
         return
 
     try:
-        pt_id = list(id_key[mrn])[0]
-
-    except IndexError:
-        with open('error_log.txt', 'a') as log:
-            log.write(
-                '{}   MRN {} not present in ID key\n'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), mrn)
-            )
-        return
-
-    try:
-        deid_ecg_date = ecg_key[mrn][ecg_date]
+        deid_ecg_date = ecg_date - date_shift
 
     except KeyError:
         with open('error_log.txt', 'a') as log:
             log.write('{}   MRN {}: ECG date {} is not present in ECG key\n'.format(
-                dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                dt.now().strftime('%Y-%m-%d %H:%M:%S'),
                 mrn,
                 str(ecg_date))
             )
@@ -151,12 +153,12 @@ def deidentify(mrn, phi_ecg, ecg_key, id_key, out_dir):
     text_elements[ele_idx['name']].text = pt_id  # replace name with PT_ID
     text_elements[ele_idx['name']].attrib['x'] = text_elements[ele_idx['name']].attrib['x'].split()[0]  # remove old per-glyph x-coords
 
-    text_elements[ele_idx['ecg_date']].text = deid_ecg_date.strftime(strf_ecg)  # replace ECG date
+    text_elements[ele_idx['ecg_date']].text = deid_ecg_date.strftime(strf_ecg).upper()  # replace ECG date
     text_elements[ele_idx['ecg_date']].attrib['x'] = text_elements[ele_idx['ecg_date']].attrib['x'].split()[0]
 
     text_elements[ele_idx['bday']].text = '{} ({} yr)'.format(
-        dt.datetime.strftime(id_key.get(mrn).get(pt_id), '%d-%b-%Y').upper(),
-        relativedelta.relativedelta(ecg_key.get(mrn).get(ecg_date), id_key.get(mrn).get(pt_id)).years
+        dt.strftime(id_key.get(mrn).get(pt_id), '%d-%b-%Y').upper(),
+        relativedelta.relativedelta(deid_ecg_date, id_key.get(mrn).get(pt_id)).years
     )
 
     text_elements[-1].clear()  # remove EID EDT ORDER ACCOUNT field
@@ -167,7 +169,7 @@ def deidentify(mrn, phi_ecg, ecg_key, id_key, out_dir):
     except TypeError:
         with open('error_log.txt', 'a') as log:
             log.write('{}   Please verify that {} has no "Technician:" field\n'.format(
-                dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                dt.now().strftime('%Y-%m-%d %H:%M:%S'),
                 phi_ecg)
             )
 
@@ -176,7 +178,7 @@ def deidentify(mrn, phi_ecg, ecg_key, id_key, out_dir):
     except TypeError:
         with open('error_log.txt', 'a') as log:
             log.write('{}   Please verify that {} has no "Confirmed by:" field\n'.format(
-                dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                dt.now().strftime('%Y-%m-%d %H:%M:%S'),
                 phi_ecg)
             )
 
@@ -185,7 +187,7 @@ def deidentify(mrn, phi_ecg, ecg_key, id_key, out_dir):
     except TypeError:
         with open('error_log.txt', 'a') as log:
             log.write('{}   Please verify that {} has no "Referred by:" field\n'.format(
-                dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                dt.now().strftime('%Y-%m-%d %H:%M:%S'),
                 phi_ecg)
             )
 
@@ -199,21 +201,21 @@ def deidentify(mrn, phi_ecg, ecg_key, id_key, out_dir):
 
         # super crude way of checking datetime format for now
         if text_elements[finding].text.count('-') == 2 and text_elements[finding].text.count(':') == 2:
-            deid_findingdt = dt.datetime.strftime(deid_findingdt, strf_ecg).upper()
-            phi_date = dt.datetime.strftime(finding_dt[0], strf_ecg)
+            deid_findingdt = dt.strftime(deid_findingdt, strf_ecg).upper()
+            phi_date = dt.strftime(finding_dt[0], strf_ecg)
 
         elif text_elements[finding].text.count('-') == 2 and text_elements[finding].text.count(':') == 1:
-            deid_findingdt = dt.datetime.strftime(deid_findingdt, strf_ecg_alt).upper()
-            phi_date = dt.datetime.strftime(finding_dt[0], strf_ecg_alt)
+            deid_findingdt = dt.strftime(deid_findingdt, strf_ecg_alt).upper()
+            phi_date = dt.strftime(finding_dt[0], strf_ecg_alt)
 
         elif text_elements[finding].text.count('-') == 2 and text_elements[finding].text.count(':') == 0:
-            deid_findingdt = dt.datetime.strftime(deid_findingdt, '%d-%b-%Y').upper()
-            phi_date = dt.datetime.strftime(finding_dt[0], '%d-%b-%Y')
+            deid_findingdt = dt.strftime(deid_findingdt, '%d-%b-%Y').upper()
+            phi_date = dt.strftime(finding_dt[0], '%d-%b-%Y')
             
         else:
             with open('error_log.txt', 'a') as log:
                 log.write(
-                    '{}  {} Unknown DT in finding: {}\n'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    '{}  {} Unknown DT in finding: {}\n'.format(dt.now().strftime('%Y-%m-%d %H:%M:%S'),
                                                                          phi_ecg,
                                                                          text_elements[finding].text)
                 )
@@ -228,7 +230,7 @@ def deidentify(mrn, phi_ecg, ecg_key, id_key, out_dir):
 
     tree.write('{}/{}_{}_EKG.svg'.format(out_dir,
                                          list(id_key.get(mrn))[0],
-                                         dt.datetime.strftime(ecg_key.get(mrn).get(ecg_date), '%Y-%m-%d')
+                                         dt.strftime(deid_ecg_date, '%Y-%m-%d')
                                          )
                )
 
@@ -236,30 +238,30 @@ def deidentify(mrn, phi_ecg, ecg_key, id_key, out_dir):
         os.remove('{}1.svg'.format(phi_svg.split('.')[0]))
     else:
         with open('error_log.txt', 'a') as log:
-            log.write("{}   Can't delete {}; file doesn't exist\n".format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            log.write("{}   Can't delete {}; file doesn't exist\n".format(dt.now().strftime('%Y-%m-%d %H:%M:%S'),
                                                                           phi_svg)
             )
 
 
 def main(id_key_path, ecg_key_path, in_dir, out_dir):
     with open('error_log.txt', 'w') as log:
-        log.write('{}   BEGIN LOGGING\n'.format(dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')))
+        log.write('{}   BEGIN LOGGING\n'.format(dt.now().strftime('%Y-%m-%d %H:%M:%S')))
 
     id_key = defaultdict(dict)
-    ecg_key = defaultdict(dict)
+    # ecg_key = defaultdict(dict)
 
-    with open(ecg_key_path, 'r') as f:
-        next(f)
-        read = csv.DictReader(f, fieldnames=['MRN', 'ECG_DATE', 'ECG_DATE_DEID'])
-        for row in read:
-            ecg_key[row['MRN']][dt.datetime.strptime(row['ECG_DATE'], '%Y-%m-%d %H:%M:%S')] \
-                = dt.datetime.strptime(row['ECG_DATE_DEID'], '%Y-%m-%d %H:%M:%S')
+    # with open(ecg_key_path, 'r') as f:
+    #     next(f)
+    #     read = csv.DictReader(f, fieldnames=['MRN', 'ECG_DATE', 'ECG_DATE_DEID'])
+    #     for row in read:
+    #         ecg_key[row['MRN']][dt.strptime(row['ECG_DATE'], '%Y-%m-%d %H:%M:%S')] \
+    #             = dt.strptime(row['ECG_DATE_DEID'], '%Y-%m-%d %H:%M:%S')
 
     with open(id_key_path, 'r') as f:
         next(f)
         read = csv.DictReader(f, fieldnames=['MRN', 'PT_ID', 'BDAY_DEID'])
         for row in read:
-            id_key[row['MRN']][row['PT_ID']] = dt.datetime.strptime(row['BDAY_DEID'], '%Y-%m-%d')
+            id_key[row['MRN']][row['PT_ID']] = dt.strptime(row['BDAY_DEID'], '%Y-%m-%d')
 
     if out_dir == '.':
         out_dir = 'Deidentified_ECGs'
@@ -270,7 +272,7 @@ def main(id_key_path, ecg_key_path, in_dir, out_dir):
         for ecg in files:
             phi_ecg = os.path.join(dir, ecg)
             mrn = dir.split('\\')[-1]  # get MRN from folder name instead of the tracing
-            deidentify(mrn, phi_ecg, ecg_key, id_key, out_dir)
+            deidentify(mrn, phi_ecg, id_key, out_dir)
 
     # for phi_ecg in tqdm([os.path.join(in_dir, x) for x in os.listdir(in_dir)]):
     #     deidentify(phi_ecg, ecg_key, id_key, out_dir)
@@ -284,8 +286,8 @@ if __name__ == '__main__':
                            help='Output directory for de-identified ECGs')
     argparser.add_argument('--id-key', action='store', type=str, required=True, dest='id_key_path',
                            help='CSV with columns MRN, PT_ID, and de-identified birthday')
-    argparser.add_argument('--ecg-key', action='store', type=str, required=True, dest='ecg_key_path',
-                           help='CSV with columns MRN, TEST_DTTM, and de-identified TEST_DTTM')
+    # argparser.add_argument('--ecg-key', action='store', type=str, required=True, dest='ecg_key_path',
+    #                        help='CSV with columns MRN, TEST_DTTM, and de-identified TEST_DTTM')
     args = argparser.parse_args()
 
     main(id_key_path=args.id_key_path, ecg_key_path=args.ecg_key_path, in_dir=args.in_dir, out_dir=args.out_dir)
