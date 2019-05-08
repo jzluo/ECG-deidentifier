@@ -6,8 +6,8 @@ import sys
 import xml.etree.ElementTree as et
 
 from collections import defaultdict
-from dateutil import parser, relativedelta
-from datetime import datetime as dt
+from dateutil import parser
+from datetime import datetime as dt, timedelta
 from subprocess import run, CalledProcessError, DEVNULL
 from tqdm import tqdm
 
@@ -121,7 +121,7 @@ def deidentify(mrn, phi_ecg, id_key, out_dir):
     ele_idx['finding_end'] = ele_idx['25mm/s']
     ele_idx['bday'] = ele_idx['prtaxes'] + 1
 
-    date_shift = dt.strptime(text_elements[ele_idx['bday']].text.split()[0], '%d-%b-%Y') - id_key.get(mrn).get(pt_id)
+    date_shift = id_key.get(mrn).get(pt_id)
 
     try:
         ecg_date = parser.parse(text_elements[ele_idx['ecg_date']].text)
@@ -135,17 +135,18 @@ def deidentify(mrn, phi_ecg, id_key, out_dir):
             )
         return
 
-    try:
-        deid_ecg_date = ecg_date - date_shift
+    # try:
+    deid_ecg_date = ecg_date + date_shift
+    deid_bday = dt.strptime(text_elements[ele_idx['bday']].text.split()[0], '%d-%b-%Y') + date_shift
 
-    except KeyError:
-        with open('error_log.txt', 'a') as log:
-            log.write('{}   MRN {}: ECG date {} is not present in ECG key\n'.format(
-                dt.now().strftime('%Y-%m-%d %H:%M:%S'),
-                mrn,
-                str(ecg_date))
-            )
-        return
+    # except KeyError:
+    #     with open('error_log.txt', 'a') as log:
+    #         log.write('{}   MRN {}: ECG date {} is not present in ECG key\n'.format(
+    #             dt.now().strftime('%Y-%m-%d %H:%M:%S'),
+    #             mrn,
+    #             str(ecg_date))
+    #         )
+    #     return
 
     strf_ecg = '%d-%b-%Y %H:%M:%S'
     strf_ecg_alt = '%d-%b-%Y %H:%M'
@@ -157,9 +158,11 @@ def deidentify(mrn, phi_ecg, id_key, out_dir):
     text_elements[ele_idx['ecg_date']].attrib['x'] = text_elements[ele_idx['ecg_date']].attrib['x'].split()[0]
 
     text_elements[ele_idx['bday']].text = '{} ({} yr)'.format(
-        dt.strftime(id_key.get(mrn).get(pt_id), '%d-%b-%Y').upper(),
-        relativedelta.relativedelta(deid_ecg_date, id_key.get(mrn).get(pt_id)).years
+        dt.strftime(deid_bday, '%d-%b-%Y').upper(),
+        str(deid_ecg_date.year - deid_bday.year - ((deid_ecg_date.month, deid_ecg_date.day) < (deid_bday.month, deid_bday.day)))
+        # relativedelta.relativedelta(deid_ecg_date, deid_bday).years
     )
+    text_elements[ele_idx['bday']].attrib['x'] = text_elements[ele_idx['bday']].attrib['x'].split()[0]
 
     text_elements[-1].clear()  # remove EID EDT ORDER ACCOUNT field
     text_elements[ele_idx['mrn']].clear()  # remove ID field
@@ -197,7 +200,7 @@ def deidentify(mrn, phi_ecg, id_key, out_dir):
         except ValueError:
             continue
 
-        deid_findingdt = finding_dt[0] - (ecg_date - deid_ecg_date)
+        deid_findingdt = finding_dt[0] + date_shift
 
         # super crude way of checking datetime format for now
         if text_elements[finding].text.count('-') == 2 and text_elements[finding].text.count(':') == 2:
@@ -227,6 +230,7 @@ def deidentify(mrn, phi_ecg, id_key, out_dir):
                                                deid_findingdt,
                                                text_elements[finding].text[(idx + len(deid_findingdt)):]]
                                               )
+        text_elements[finding].attrib['x'] = text_elements[finding].attrib['x'].split()[0]
 
     tree.write('{}/{}_{}_EKG.svg'.format(out_dir,
                                          list(id_key.get(mrn))[0],
@@ -259,9 +263,9 @@ def main(id_key_path, in_dir, out_dir):
 
     with open(id_key_path, 'r') as f:
         next(f)
-        read = csv.DictReader(f, fieldnames=['MRN', 'PT_ID', 'BDAY_DEID'])
+        read = csv.DictReader(f, fieldnames=['MRN', 'PT_ID', 'DATE_SHIFT'])
         for row in read:
-            id_key[row['MRN']][row['PT_ID']] = dt.strptime(row['BDAY_DEID'], '%Y-%m-%d')
+            id_key[row['MRN']][row['PT_ID']] = timedelta(days=int(row['DATE_SHIFT']))
 
     if out_dir == '.':
         out_dir = 'Deidentified_ECGs'
@@ -285,7 +289,7 @@ if __name__ == '__main__':
     argparser.add_argument('--output-dir', action='store', type=str, required=True, dest='out_dir',
                            help='Output directory for de-identified ECGs')
     argparser.add_argument('--id-key', action='store', type=str, required=True, dest='id_key_path',
-                           help='CSV with columns MRN, PT_ID, and de-identified birthday')
+                           help='CSV with columns MRN, PT_ID, and number of days to shift dates')
     # argparser.add_argument('--ecg-key', action='store', type=str, required=True, dest='ecg_key_path',
     #                        help='CSV with columns MRN, TEST_DTTM, and de-identified TEST_DTTM')
     args = argparser.parse_args()
