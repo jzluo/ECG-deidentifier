@@ -243,7 +243,7 @@ def deidentify(mrn, phi_ecg, id_key, out_dir):
             )
 
 
-def main(id_key_path, ecg_key_path, in_dir, out_dir):
+def main(id_key_path, in_dir, out_dir):
     with open('error_log.txt', 'w') as log:
         log.write('{}   BEGIN LOGGING\n'.format(dt.now().strftime('%Y-%m-%d %H:%M:%S')))
 
@@ -290,4 +290,4 @@ if __name__ == '__main__':
     #                        help='CSV with columns MRN, TEST_DTTM, and de-identified TEST_DTTM')
     args = argparser.parse_args()
 
-    main(id_key_path=args.id_key_path, ecg_key_path=args.ecg_key_path, in_dir=args.in_dir, out_dir=args.out_dir)
+    main(id_key_path=args.id_key_path, in_dir=args.in_dir, out_dir=args.out_dir)  # ecg_key_path=args.ecg_key_path
