@@ -6,7 +6,8 @@ import sys
 import xml.etree.ElementTree as et
 
 from collections import defaultdict
-from dateutil import parser
+# from dateutil import parser
+from datefinder import find_dates
 from datetime import datetime as dt, timedelta
 from subprocess import run, CalledProcessError, DEVNULL
 from tqdm import tqdm
@@ -124,7 +125,8 @@ def deidentify(mrn, phi_ecg, id_key, out_dir):
     date_shift = id_key.get(mrn).get(pt_id)
 
     try:
-        ecg_date = parser.parse(text_elements[ele_idx['ecg_date']].text)
+        ecg_date = next(find_dates(text_elements[ele_idx['ecg_date']].text))
+            # parser.parse(text_elements[ele_idx['ecg_date']].text)
 
     except ValueError:
         with open('error_log.txt', 'a') as log:
@@ -196,41 +198,51 @@ def deidentify(mrn, phi_ecg, id_key, out_dir):
 
     for finding in range(ele_idx['finding_start'], ele_idx['finding_end']):
         try:
-            finding_dt = parser.parse(text_elements[finding].text, fuzzy_with_tokens=True, ignoretz=True)
+            finding_dt = find_dates(text_elements[finding].text, source=True, index=True)
+            #  ^ eg (datetime.datetime(2019, 3, 3, 8, 21), 'of 08:21 Mar 3', (17, 34))
+        # finding_dt = parser.parse(text_elements[finding].text, fuzzy_with_tokens=True, ignoretz=True)
         except ValueError:
             continue
 
-        deid_findingdt = finding_dt[0] + date_shift
+        for date in finding_dt:
+            l = 1  # add 1 to left index to account for whitespace, eg " of 08:21 Mar 3"
+            r = 1
+            deid_findingdt = date[0] + date_shift
+            source = text_elements[finding].text[date[2][0]:date[2][1]]
+            if source.startswith(' of') or source.startswith(' on'):
+                l = 4
+            if source.endswith(' '):
+                r = 2
 
         # super crude way of checking datetime format for now
-        if text_elements[finding].text.count('-') == 2 and text_elements[finding].text.count(':') == 2:
-            deid_findingdt = dt.strftime(deid_findingdt, strf_ecg).upper()
-            phi_date = dt.strftime(finding_dt[0], strf_ecg)
-
-        elif text_elements[finding].text.count('-') == 2 and text_elements[finding].text.count(':') == 1:
-            deid_findingdt = dt.strftime(deid_findingdt, strf_ecg_alt).upper()
-            phi_date = dt.strftime(finding_dt[0], strf_ecg_alt)
-
-        elif text_elements[finding].text.count('-') == 2 and text_elements[finding].text.count(':') == 0:
-            deid_findingdt = dt.strftime(deid_findingdt, '%d-%b-%Y').upper()
-            phi_date = dt.strftime(finding_dt[0], '%d-%b-%Y')
+        # if text_elements[finding].text.count('-') == 2 and text_elements[finding].text.count(':') == 2:
+        #     deid_findingdt = dt.strftime(deid_findingdt, strf_ecg).upper()
+        #     phi_date = dt.strftime(finding_dt[0], strf_ecg)
+        #
+        # elif text_elements[finding].text.count('-') == 2 and text_elements[finding].text.count(':') == 1:
+        #     deid_findingdt = dt.strftime(deid_findingdt, strf_ecg_alt).upper()
+        #     phi_date = dt.strftime(finding_dt[0], strf_ecg_alt)
+        #
+        # elif text_elements[finding].text.count('-') == 2 and text_elements[finding].text.count(':') == 0:
+        #     deid_findingdt = dt.strftime(deid_findingdt, '%d-%b-%Y').upper()
+        #     phi_date = dt.strftime(finding_dt[0], '%d-%b-%Y')
             
-        else:
-            with open('error_log.txt', 'a') as log:
-                log.write(
-                    '{}  {} Unknown DT in finding: {}\n'.format(dt.now().strftime('%Y-%m-%d %H:%M:%S'),
-                                                                         phi_ecg,
-                                                                         text_elements[finding].text)
-                )
-                return
+        # else:
+        #     with open('error_log.txt', 'a') as log:
+        #         log.write(
+        #             '{}  {} Unknown DT in finding: {}\n'.format(dt.now().strftime('%Y-%m-%d %H:%M:%S'),
+        #                                                                  phi_ecg,
+        #                                                                  text_elements[finding].text)
+        #         )
+        #         return
 
-        idx = text_elements[finding].text.lower().find(phi_date.lower())  # get index pos of date in finding str
+        #idx = text_elements[finding].text.lower().find(phi_date.lower())  # get index pos of date in finding str
 
-        text_elements[finding].text = ''.join([text_elements[finding].text[:idx],
-                                               deid_findingdt,
-                                               text_elements[finding].text[(idx + len(deid_findingdt)):]]
-                                              )
-        text_elements[finding].attrib['x'] = text_elements[finding].attrib['x'].split()[0]
+            text_elements[finding].text = ''.join([text_elements[finding].text[:date[2][0] + l],
+                                                   dt.strftime(deid_findingdt, '%d-%b-%Y %H:%M'),
+                                                   text_elements[finding].text[(date[2][1] - r):]]
+                                                  )
+            text_elements[finding].attrib['x'] = text_elements[finding].attrib['x'].split()[0]
 
     tree.write('{}/{}_{}_EKG.svg'.format(out_dir,
                                          list(id_key.get(mrn))[0],
