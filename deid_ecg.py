@@ -137,9 +137,16 @@ def deidentify(mrn, phi_ecg, id_key, out_dir):
             )
         return
 
-    # try:
-    deid_ecg_date = ecg_date + date_shift
-    deid_bday = dt.strptime(text_elements[ele_idx['bday']].text.split()[0], '%d-%b-%Y') + date_shift
+    try:
+        deid_ecg_date = ecg_date + date_shift
+        deid_bday = dt.strptime(text_elements[ele_idx['bday']].text.split()[0], '%d-%b-%Y') + date_shift
+    except ValueError as e:
+        with open('error_log.txt', 'a') as log:
+            log.write('{}   {}: {}\n'.format(
+                dt.now().strftime('%Y-%m-%d %H:%M:%S'),
+                os.path.basename(phi_ecg),
+                e)
+            )
 
     # except KeyError:
     #     with open('error_log.txt', 'a') as log:
